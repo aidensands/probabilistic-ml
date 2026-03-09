@@ -17,10 +17,6 @@ true_y_intercept = 2
 # relatively noisy?
 data_y = true_slope * data_X + true_y_intercept * 1.75 * torch.randn(100)
 
-plt.title('Data Distribution Before Learning')
-plt.scatter(data_X, data_y)
-plt.show()
-
 def model(X, y):
     w = pyro.sample('w', Normal(loc=torch.tensor([0.0]), scale=torch.tensor([10.0])))
     b = pyro.sample('b', Normal(loc=torch.tensor([0.0]), scale=torch.tensor([10.0])))
@@ -50,13 +46,14 @@ def guide(X, y):
 
 svi = SVI(model=model, guide=guide, optim=Adam({'lr':0.005}), loss=Trace_ELBO())
 losses = list()
+steps = list()
 
 for step in range(10000):
     loss = svi.step(data_X, data_y)
+    steps.append(step)
     losses.append(loss)
-    if step % 1000 == 0:
-        print(f'Epoch: {step} ======================================')
-        print(f'TraceELBO Loss: {loss}')
+    print(f'Epoch: {step} ======================================')
+    print(f'TraceELBO Loss: {loss}')
     
 w_loc   = pyro.param("w_loc").item()
 w_scale = pyro.param("w_scale").item()
@@ -69,17 +66,22 @@ print(f"b: mean={b_loc:.3f}, std={b_scale:.3f}  (true: {true_y_intercept})")
 
 mean_line = data_X * w_loc + b_loc
 
+slope_samples = dist.Normal(loc=w_loc, scale=w_scale).sample((50000,))
+intercept_samples = dist.Normal(loc=b_loc, scale=b_scale).sample((50000,))
 
-plt.title('Mean Inferred Data after SVI')
-plt.scatter(data_X, data_y)
-plt.plot(data_X, mean_line)
+fig, ax = plt.subplots(2, 2, figsize=(10,8))
+
+ax[0,0].set_title('Pre Fitting Data')
+ax[0,0].scatter(data_X, data_y)
+ax[0,1].set_title('Fitted Line')
+ax[0,1].scatter(data_X, data_y)
+ax[0,1].plot(data_X, mean_line, color='red')
+ax[1,0].set_title('Posterior Mean of Slope')
+sns.histplot(slope_samples, ax=ax[1,0], kde=True)
+ax[1,1].set_title('Posterior Mean of Intercept')
+sns.histplot(intercept_samples, ax=ax[1,1], kde=True)
 plt.show()
+plt.savefig('figs/bayesian_regression.png')
 
-slope_samples = dist.Normal(loc=w_loc, scale=w_scale).sample((100000,))
-intercept_samples = dist.Normal(loc=b_loc, scale=b_scale).sample((100000,))
-
-plt.title('Posterior of the Slope')
-sns.histplot(slope_samples, kde=True)
-plt.axvline(w_loc, color='red', linestyle='dashed', linewidth=2)
-plt.axvline(true_slope, color='blue', linestyle='dashed', linewidth=2)
+plt.plot(steps, losses)
 plt.show()
