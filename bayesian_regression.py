@@ -52,8 +52,9 @@ for step in range(10000):
     loss = svi.step(data_X, data_y)
     steps.append(step)
     losses.append(loss)
-    print(f'Epoch: {step} ======================================')
-    print(f'TraceELBO Loss: {loss}')
+    if step % 1000 == 0:
+        print(f'Epoch: {step} ======================================')
+        print(f'TraceELBO Loss: {loss}')
     
 w_loc   = pyro.param("w_loc").item()
 w_scale = pyro.param("w_scale").item()
