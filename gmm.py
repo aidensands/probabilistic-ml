@@ -2,7 +2,7 @@ import torch
 import pyro
 import pyro.distributions as dist
 from pyro.optim import Adam 
-from pyro.infer import SVI, Trace_ELBO, MCMC
+from pyro.infer import SVI, Trace_ELBO
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -44,6 +44,7 @@ def guide(X):
         pyro.sample('assignment', dist.Categorical(assigment_probs))
 
 pyro.clear_param_store()
+
 
 optimizer = Adam({'lr':0.005})
 svi = SVI(model, guide, optimizer, Trace_ELBO())

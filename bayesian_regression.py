@@ -3,7 +3,7 @@ import pyro
 import pyro.distributions as dist
 from pyro.distributions import Normal, LogNormal
 from pyro.optim import Adam 
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import SVI, Trace_ELBO, MCMC, NUTS
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -44,6 +44,7 @@ def guide(X, y):
 
 # Time to train
 
+
 svi = SVI(model=model, guide=guide, optim=Adam({'lr':0.005}), loss=Trace_ELBO())
 losses = list()
 steps = list()
@@ -54,7 +55,7 @@ for step in range(10000):
     losses.append(loss)
     if step % 1000 == 0:
         print(f'Epoch: {step} ======================================')
-        print(f'TraceELBO Loss: {loss}')
+        print(f'TraceELBO Loss: {loss}') 
     
 w_loc   = pyro.param("w_loc").item()
 w_scale = pyro.param("w_scale").item()
