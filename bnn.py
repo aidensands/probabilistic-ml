@@ -19,6 +19,9 @@ def bnn(X, y=None):
     input_dim = X.shape[1]
     hidden_dimensions = 16
 
+
+    # Network architecture (3 layers with 16 neurons each)
+
     w1 = pyro.sample('w1', dist.Normal(
         loc=torch.zeros(input_dim, hidden_dimensions),
         scale=torch.ones(input_dim, hidden_dimensions)
@@ -49,4 +52,14 @@ def bnn(X, y=None):
         scale=torch.ones(1,1)
     ))
 
+    # Forward Pass
+    h1 = torch.tanh(X @ w1 + w2)
+    h2 = torch.tanh(h1 @ w2 + b2)
+    mu = torch.tanh(h2 @ w3 + b3).unsqueeze(-1)
+
+    sigma = pyro.sample('sigma', dist.Exponential(1.0))
+
+    with pyro.plate('obs', X.shape[0]):
+        pyro.sample('obs', dist.Normal(mu, sigma), obs=y)
     
+    return mu

@@ -7,7 +7,6 @@ from pyro.infer import SVI, Trace_ELBO, MCMC, NUTS
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
 # Generating sample data
 data_X = torch.linspace(0, 100, 100, dtype=torch.int32)
 
@@ -21,9 +20,7 @@ def model(X, y):
     w = pyro.sample('w', Normal(loc=torch.tensor([0.0]), scale=torch.tensor([10.0])))
     b = pyro.sample('b', Normal(loc=torch.tensor([0.0]), scale=torch.tensor([10.0])))
     sigma = pyro.sample('sigma', fn=LogNormal(loc=torch.tensor([0.0]), scale=torch.tensor([0.25])))
-
     mean = X * w + b
-
     with pyro.plate('data', len(X)):
         pyro.sample('obs', Normal(loc=mean, scale=sigma), obs=y)
 

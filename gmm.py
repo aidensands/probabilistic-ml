@@ -5,21 +5,20 @@ from pyro.optim import Adam
 from pyro.infer import SVI, Trace_ELBO
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import pyarrow.parquet as pq
 
 torch.manual_seed(42)
-data = torch.cat([
-    torch.randn(5000) * 0.5 + 2.0,   # cluster 1: mean=2, std=0.5
-    torch.randn(5000) * 0.5 - 2.0,    # cluster 2: mean=-2, std=0.5,
-    torch.randn(5000) * 0.5 + 4.0
-])
+parquet = pq.read_table('data/SGNex_Hct116_directRNA_replicate1_run1.parquet', columns=['event_length'])
+df = parquet.to_pandas()
+nparray = df.to_numpy()
+data = torch.from_numpy(nparray)
 
-K = 3  # number of components
+K = 2  # number of components
 N = len(data)
 
 def model(X):
     with pyro.plate('clusters', K):
-        means = pyro.sample('means', dist.Normal(torch.tensor([0.0]), torch.tensor([5.0])))
+        means = pyro.sample('means', dist.Normal(torch.tensor([0.0068]), torch.tensor([0.00001])))
 
     weights = pyro.sample('weights', dist.Dirichlet(0.5 * torch.ones(K)))
 
