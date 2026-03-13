@@ -6,3 +6,6 @@ The first model implemented. Takes some randomly generated correlated points and
 
 ## Gaussian Mixture Model
 Assuming that our data was generated from many different gaussians, we can treat this sort of like a clustering problem. The difference between this model and a classical KMM classifier is that we will also know how confident the model is with its clustering. 
+
+## Gamma Mixture Model
+The same as the model from before except we are sample from a more homogenous distribution. It works far more accurately than I expected and uses MCMC and NUTS
