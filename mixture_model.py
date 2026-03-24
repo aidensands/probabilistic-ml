@@ -40,14 +40,14 @@ def model(data):
 if __name__ == '__main__':
     kernel = NUTS(model, target_accept_prob=0.9)
     mcmc = MCMC(
-        kernel=kernel,
+        kernel=kernel, 
         num_samples=2000,
         warmup_steps=1000,
         num_chains=4,
         mp_context="spawn"   # explicit on macOS
     )
     mcmc.run(data)
-    samples = mcmc.get_samples()
+    samples = mcmc.get_samples() 
 
     for param in ["mixture_weights", "alpha1", "beta1", "alpha2", "beta2"]:
         s = samples[param]
