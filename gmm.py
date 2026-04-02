@@ -1,72 +1,69 @@
 import torch
 import pyro
 import pyro.distributions as dist
-from pyro.optim import Adam 
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import MCMC, NUTS
+from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pyarrow.parquet as pq
 
-torch.manual_seed(42)
-parquet = pq.read_table('data/SGNex_Hct116_directRNA_replicate1_run1.parquet', columns=['event_length'])
-df = parquet.to_pandas()
-nparray = df.to_numpy()
-data = torch.from_numpy(nparray)
+synth_cluster_1 = torch.normal(2, 1.5, size=(500,))
+synth_cluster_2 = torch.normal(3.5, 0.5, size=(500,))
+synth_clusters = torch.concat((synth_cluster_1, synth_cluster_2))
 
-K = 2  # number of components
-N = len(data)
+sns.kdeplot(synth_clusters, fill=True)
+plt.title('True Distribution')
+plt.show()
+K = 2
+
+# New technique: use KMeans to initialize informative priorss
+def initialize_priors(X, K):
+
+    print('Running Lloyd K-Means...')
+
+    X = X.reshape(-1,1)
+
+    kmeans = KMeans(
+        n_clusters=K,
+        n_init='auto',
+        init='k-means++'
+    )
+    kmeans.fit(X)
+    
+    prior_locs = kmeans.cluster_centers_
+    print(f'Prior Locs: {prior_locs}')
+    print('K-Means: Ok')
+    return torch.Tensor(prior_locs).squeeze(-1)
+
+
+prior_locs = initialize_priors(synth_clusters, K)
 
 def model(X):
-    with pyro.plate('clusters', K):
-        means = pyro.sample('means', dist.Normal(torch.tensor([0.0068]), torch.tensor([0.00001])))
+    weights = pyro.sample('weights', dist.Dirichlet(torch.ones(K)))
 
-    weights = pyro.sample('weights', dist.Dirichlet(0.5 * torch.ones(K)))
-
-    with pyro.plate('data', N):
-        assigment = pyro.sample('assignment', dist.Categorical(weights))
-        pyro.sample('observations', dist.Normal(means[assigment], 0.5), obs=X)
-
-
-def guide(X):
-    means_loc = pyro.param('means_loc', torch.randn(K))
-    means_scale = pyro.param('means_scale', torch.ones(K), constraint=dist.constraints.positive)
-    weights_conc = pyro.param('weights_conc', torch.ones(K), dist.constraints.positive)
-    
+    # Learned: Allow for each component to have its own loc and scale 
     with pyro.plate('components', K):
-        pyro.sample('means', dist.Normal(means_loc, means_scale))
-    
-    pyro.sample('weights', dist.Dirichlet(weights_conc))
+        locs = pyro.sample('locs', dist.Normal(prior_locs, 3.0))
+        scale = pyro.sample('scale', dist.LogNormal(0.0, 2.0))
 
-    assigment_probs = pyro.param('assigment_probs', torch.ones(N,K) / K, constraint=dist.constraints.simplex)
+    with pyro.plate('data', len(X)):
+        assignment = pyro.sample('assignment', dist.Categorical(weights))
+        pyro.sample('obs', dist.Normal(locs[assignment], scale[assignment]), obs=X)
 
-    with pyro.plate('data', N):
-        pyro.sample('assignment', dist.Categorical(assigment_probs))
+Kernel = NUTS(model)
+mcmc = MCMC(Kernel, 600, 400)
+mcmc.run(synth_clusters)
+mcmc.summary()
+posterior_samples = mcmc.get_samples()
 
-pyro.clear_param_store()
+X, Y = posterior_samples['locs'].T
 
-
-optimizer = Adam({'lr':0.005})
-svi = SVI(model, guide, optimizer, Trace_ELBO())
-
-epochs = 10000
-losses = list()
-
-for epoch in range(epochs):
-    loss = svi.step(data)
-    losses.append(loss)
-    if epoch % 500 == 0:
-        print(f'Iteration {epoch}: Loss {loss}')
-
-means_learned = pyro.param("means_loc")
-weights_learned = pyro.param("weights_conc")
-weights_learned = weights_learned / weights_learned.sum()  # normalize
-
-print("Learned means:", means_learned)
-print("Learned weights:", weights_learned)
-
-sns.histplot(data)
+sns.lineplot(X.numpy())
+sns.lineplot(Y.numpy())
+plt.title('Locs during MCMC')
+plt.xlabel('MCMC Step')
+plt.ylabel('loc')
 plt.show()
 
-x = torch.linspace(0, 10000, 10000)
-sns.lineplot(x=x, y=losses)
-plt.show()
+mcmc.get_samples()
+
+sns.kdeplot(synth_clusters, fill=True)
