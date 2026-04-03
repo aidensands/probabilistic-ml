@@ -15,7 +15,7 @@ plt.title('True Distribution')
 plt.show()
 K = 2
 
-# New technique: use KMeans to initialize informative priorss
+# New technique: use KMeans to initialize informative priors
 def initialize_priors(X, K):
 
     print('Running Lloyd K-Means...')
