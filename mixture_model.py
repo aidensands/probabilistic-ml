@@ -28,7 +28,7 @@ def model(data):
 
     pyro.factor('ordering', -10.0 * torch.relu(alpha1 - alpha2))
 
-    with pyro.plate('data', len(data)):
+    with pyro.plate('data', size=len(data)):
         
         log_prob1 = Gamma(alpha1, beta1).log_prob(data)
         log_prob2 = Gamma(alpha2, beta2).log_prob(data)
