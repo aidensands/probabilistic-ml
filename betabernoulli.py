@@ -25,3 +25,5 @@ kernel = NUTS(model=Model)
 mcmc = MCMC(kernel, num_warmup=500, num_samples=1000)
 mcmc.run(key, data)
 mcmc.print_summary()
+
+numpyro.render_model(model=Model, model_args=(data,), filename='figs/betabernoulli.svg')

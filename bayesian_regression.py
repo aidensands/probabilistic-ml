@@ -18,7 +18,8 @@ def BayesianRegressionModel(x, y):
     weights = numpyro.sample('weights', dist.Normal(0.0, 2.5))
     sigma = numpyro.sample('sigma', dist.Exponential(1.0))
     mu = (x * weights) + epsilon
-    numpyro.sample('obs', dist.Normal(mu, sigma), obs=y)
+    with numpyro.plate('data', len(y)):
+        numpyro.sample('obs', dist.Normal(mu, sigma), obs=y)
 
 kernel = NUTS(BayesianRegressionModel)
 mcmc = MCMC(kernel, num_warmup=10, num_samples=2000)
@@ -30,6 +31,8 @@ predictive_weight = samples['weights']
 predictive_e = samples['epsilon']
 predictive_error = samples['sigma']
 
-regression_line = predictive_weight * x + predictive_e
-
+sns.kdeplot(predictive_weight)
+plt.show()
+sns.kdeplot(predictive_e)
+plt.show()
 
