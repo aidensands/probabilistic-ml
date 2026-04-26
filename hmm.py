@@ -1,7 +1,9 @@
 import numpyro
-from numpyro.distributions import Dirichlet
+from numpyro.distributions import Dirichlet, Categorical
+from numpyro.infer import MCMC, NUTS
 import jax
 import jax.numpy as jnp
+from jax import lax
 import numpy as np
 
 # --- Ground truth parameters ---
@@ -32,17 +34,37 @@ def simulate_hmm(key, T=20):
 
 # Generate 5 sequences of length 20
 key = jax.random.PRNGKey(42)
+
 sequences = []
 for i in range(5):
     key, subkey = jax.random.split(key)
-    hidden, observed = simulate_hmm(subkey, T=20)
+    hidden, observed = simulate_hmm(subkey, T=1000)
     sequences.append(observed)
-    print(f"Seq {i}: {observed}")
-    print(f"       hidden: {hidden}\n")
 
 def SimpleHMM(observations, states=2, obs=3):
     
     initial_probs = numpyro.sample('initial_probs', Dirichlet(jnp.ones(states)))
+    
+    with numpyro.plate('transition_plate', states):
+        transition_probs = numpyro.sample('transition_probs', Dirichlet(jnp.ones(states)))
+    
+    with numpyro.plate('emission_plate', states):
+        emission_probs = numpyro.sample('emission_probs', Dirichlet(jnp.ones(obs)))
 
-    with numpyro.plate('transition_probs', len(observations)):
-        pass
+    def forward(previous_state, t):
+        current_state = numpyro.sample('current_state', Categorical(transition_probs[previous_state]))
+        numpyro.sample('observed_state', Categorical(emission_probs[current_state], obs=observations[t]))
+
+    first_step = numpyro.sample('first_step', Categorical(initial_probs))
+    numpyro.sample('first_observation', Categorical(emission_probs[first_step]), obs=observations[0])
+
+    lax.scan(forward, first_step, jnp.arange(1, len(observations)))
+
+
+kernel = NUTS(SimpleHMM)
+mcmc = MCMC(
+    sampler=kernel,
+    num_warmup=500,
+    num_samples=1000
+)
+mcmc.run(key, observed)

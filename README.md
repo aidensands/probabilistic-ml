@@ -1,6 +1,9 @@
 # probabilistic-ml
 A repository containing various probabilistic machine learning models starting from the simplest to the most complex.
 
+## Beta-Bernoulli Model
+This is a model I implemented while I was reading a textbook about probabilistic ML. I wanted to implement a model that would infer the probability that an event happens (a success) given a series of observations. The easiest demonstration of this is a coin flip where we infer the probability of heads. We already know this but its a really simple demonstration of how numpyro works and I like it. 
+
 ## Bayesian Regression
 The first model implemented. Takes some randomly generated correlated points and attempts to a find a line for which the points are most probably generated. There are two versions of this, the first is data that comes from syntheic line data and the other one is a students t distribution that is supposed to be used to detect outliers such as students who cheated on an exam or students who underperformed despite studying heavily. I recently started to update these to only use MCMC and NUTS
 ![Alt Text](figs/bregression.svg)
