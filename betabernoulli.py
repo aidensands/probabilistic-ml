@@ -1,12 +1,13 @@
 import numpyro
 import numpyro.distributions as dist
-from numpyro.infer import MCMC, NUTS
+from numpyro.infer import MCMC, NUTS, Predictive
 import jax.numpy as jnp
 import jax.random as random
-
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 key = random.PRNGKey(42)
-data = jnp.concat([jnp.ones(50), jnp.zeros(50)])
+data = jnp.concat([jnp.ones(70), jnp.zeros(30)])
 data = random.permutation(key, data)
 print(len(data))
 
@@ -26,4 +27,15 @@ mcmc = MCMC(kernel, num_warmup=500, num_samples=1000)
 mcmc.run(key, data)
 mcmc.print_summary()
 
-numpyro.render_model(model=Model, model_args=(data,), filename='figs/betabernoulli.svg')
+posterior_samples = mcmc.get_samples()
+predictor = Predictive(model=Model, posterior_samples=posterior_samples)
+generated_flips = predictor(key, data)
+print(generated_flips)
+
+sns.histplot(data=data)
+plt.title('Real Trial Data (Coin Flips)')
+plt.show()
+
+sns.histplot(data=generated_flips)
+plt.title('Generative Data from Posterior (Coin Flips)')
+plt.show()
