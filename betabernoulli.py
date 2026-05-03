@@ -32,10 +32,5 @@ predictor = Predictive(model=Model, posterior_samples=posterior_samples)
 generated_flips = predictor(key, data)
 print(generated_flips)
 
-sns.histplot(data=data)
-plt.title('Real Trial Data (Coin Flips)')
-plt.show()
 
-sns.histplot(data=generated_flips)
-plt.title('Generative Data from Posterior (Coin Flips)')
-plt.show()
+numpyro.render_model(model=Model, model_args=(data,))
