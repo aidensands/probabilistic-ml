@@ -56,7 +56,7 @@ def LogisticBayes(X, y=None):
 
 def MCMC_inference(X, y, burn_in, samples, chains=1, key=None):
     kernel = NUTS(model=LogisticBayes)
-    mcmc = MCMC(
+    mcmc = MCMC(\
         sampler=kernel,
         num_warmup=burn_in,
         num_samples=samples,
