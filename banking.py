@@ -8,7 +8,8 @@ import functools
 # My Models and utilities
 from models.logistic import BayesianLogisticModel
 from models.nam import BayesianNAM, SubNet
-from utils import mcmc_inference, svi_inference, generate_keys, predict_and_evaluate
+from models.bnn import BayesianNeuralNetwork, NeuralNetwork
+from scripts.utils import mcmc_inference, svi_inference, generate_keys, predict_and_evaluate
 
 def preprocess(path, polynomial_interactions=False):
     """Load csv data and clean/standardize the data"""
@@ -57,10 +58,22 @@ def preprocess(path, polynomial_interactions=False):
 def main():
     X_train, y_train, X_test, y_test = preprocess('data/bank-full.csv')
     prngkey = generate_keys()
-    subkeys = jax.random.split(prngkey, X_train.shape[1])
-    subnets = [SubNet(16, k) for k in subkeys]
 
-    baked_model = functools.partial(BayesianNAM, dummy_subnets=subnets)
+    dummy_net = NeuralNetwork(
+        input_dims=X_train.shape[1],
+        hidden_dims=16,
+        key=prngkey
+    )
+
+    BNN = BayesianNeuralNetwork(
+        X=X_train,
+        y=y_train,
+        network=dummy_net
+    )    
+
+    # Apparently this has to happen to bridge the gap between numpyro and equinox
+    baked_model = functools.partial(BayesianNeuralNetwork, dummy_net=dummy_net)
+
     svi_results, guide = svi_inference(
         model=baked_model,
         X=X_train,

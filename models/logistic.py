@@ -4,7 +4,10 @@ import numpyro.distributions as dist
 
 
 def BayesianLogisticModel(X, y = None):
-
+    """
+    Numpyro model definition for Bayesian logistic regression. Utilizes Bayesian
+    variable selection and is can take as many features as needed.
+    """
     num_features = X.shape[1]
     intercept = numpyro.sample('intercept', dist.Normal(0.0, 1.0))
     tau = numpyro.sample('tau', dist.HalfCauchy(1.0))
