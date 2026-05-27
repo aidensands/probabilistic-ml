@@ -33,8 +33,16 @@ def sample_net(module, prefix):
     sampled_nodes = []
 
     for i, node in enumerate(flat):
-        if isinstance(node, jax.Array):
-            sampled_node = numpyro.sample(f'{prefix}_p{i}', dist.Normal(0.0, 1.0).expand(node.shape))
+        # For JAX arrays (weights / biases) sample an array with the same shape
+        if isinstance(node, jax.Array) or hasattr(node, 'shape'):
+            shape = getattr(node, 'shape', ())
+            if shape == ():
+                sampled_node = numpyro.sample(f'{prefix}_p{i}', dist.Normal(0.0, 1.0))
+            else:
+                sampled_node = numpyro.sample(
+                    f'{prefix}_p{i}',
+                    dist.Normal(0.0, 1.0).expand(shape).to_event(len(shape))
+                )
             sampled_nodes.append(sampled_node)
         else:
             sampled_nodes.append(node)
@@ -43,8 +51,8 @@ def sample_net(module, prefix):
     return reconstructed_tree
 
 
-def BayesianNeuralNetwork(X, y=None, network=None):
+def BayesianNeuralNetwork(X, y=None, framework=None):
     
-    net = sample_net(network, 'net')
+    net = sample_net(framework, 'net')
     logits = net(X).squeeze(-1)
     numpyro.sample('obs', dist.Bernoulli(logits=logits), obs=y)

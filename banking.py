@@ -12,14 +12,18 @@ from models.bnn import BayesianNeuralNetwork, NeuralNetwork
 from scripts.utils import mcmc_inference, svi_inference, generate_keys, predict_and_evaluate
 
 def preprocess(path, polynomial_interactions=False):
-    """Load csv data and clean/standardize the data"""
+    """Load csv data and clean/standardize the data
+        all binary data is encoded with binary integers
+        all categorical data is one hot encoded with the exception of months
+        month is encoded using sine cosine encoding
+    """
 
     df = pd.read_csv(path, sep=';')
     scaler = StandardScaler()
     interactor = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
     # Encode job categories and save decoder
 
-    categorical_columns = ['job', 'education', 'marital']
+    categorical_columns = ['job', 'education', 'marital', 'poutcome']
 
     # Encode labels and defaulting
     binary_mapper = {'no': 0, 'yes': 1}
@@ -39,12 +43,11 @@ def preprocess(path, polynomial_interactions=False):
     df['month_sin'] = jnp.sin(2 * jnp.pi * df['month_idx'].to_numpy(dtype=int) / 12)
     df['month_cos'] = jnp.cos(2 * jnp.pi * df['month_idx'].to_numpy(dtype=int) / 12)
 
-    df = df.drop(columns=['poutcome', 'duration', 'pdays', 'month', 'month_idx', 'contact'])
 
-    print(df)
+    df = df.drop(columns=['duration', 'pdays', 'month', 'month_idx', 'contact'])
 
-    labels = jnp.array(df['y'], dtype=jnp.int32)
-    features = jnp.array(df.drop(columns=['y']))
+    labels = df['y']
+    features = df.drop(columns=['y'])
 
     scaled_features = scaler.fit_transform(features)
 
@@ -53,39 +56,33 @@ def preprocess(path, polynomial_interactions=False):
         X_train, X_test, y_train, y_test = train_test_split(poly_scaled_features, labels, test_size=0.2,  shuffle=True)
 
     X_train, X_test, y_train, y_test = train_test_split(scaled_features, labels, test_size=0.2,  shuffle=True)
+
+    print(df.head(n=10))
+
+    X_train = jnp.array(X_train)
+    X_test = jnp.array(X_test)
+    y_train = jnp.array(y_train)
+    y_test = jnp.array(y_test)
+
     return X_train, y_train, X_test, y_test
 
 def main():
     X_train, y_train, X_test, y_test = preprocess('data/bank-full.csv')
+    # Debug: print shapes and a tiny sample to catch transposition/dtype issues
     prngkey = generate_keys()
 
-    dummy_net = NeuralNetwork(
-        input_dims=X_train.shape[1],
-        hidden_dims=16,
-        key=prngkey
-    )
-
-    BNN = BayesianNeuralNetwork(
-        X=X_train,
-        y=y_train,
-        network=dummy_net
-    )    
-
-    # Apparently this has to happen to bridge the gap between numpyro and equinox
-    baked_model = functools.partial(BayesianNeuralNetwork, dummy_net=dummy_net)
-
     svi_results, guide = svi_inference(
-        model=baked_model,
-        X=X_train,
-        y=y_train,
+        model=BayesianLogisticModel,
+        X_train=X_train,
+        y_train=y_train,
         rngkey=prngkey,
-        steps=5000
+        steps=10000
     )
 
     predict_and_evaluate(
-        model=baked_model,
-        X=X_test,
-        y=y_test,
+        model=BayesianLogisticModel,
+        X_test=X_test,
+        y_test=y_test,
         rngkey=prngkey,
         svi_results=svi_results,
         guide=guide
