@@ -13,13 +13,20 @@ from sklearn.metrics import (
     roc_auc_score,
     precision_recall_curve
 )
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.compose import ColumnTransformer
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import secrets
 
 
-def mcmc_inference(model, X_test, y_test, burn_in, samples, rngkey, chains=1):
-    """Begins Markov Chain Monte Carlo approximation of the posterior distribution"""
+def mcmc_inference(model, X_train, y_train, burn_in, samples, rngkey, chains=1, group_codes=None, inducing=None):
+    """
+    Begins Markov Chain Monte Carlo approximation of the posterior distribution.
+
+    """
     kernel = NUTS(
         model=model
     )
@@ -31,7 +38,24 @@ def mcmc_inference(model, X_test, y_test, burn_in, samples, rngkey, chains=1):
         num_chains=chains
     )
 
-    mcmc.run(rng_key=rngkey, X=X_test, y=y_test)
+    if group_codes is not None:
+        mcmc.run(
+            rng_key=rngkey,
+            X=X_train,
+            y=y_train,
+            groups=group_codes,
+            num_groups=int(jnp.max(group_codes) + 1)
+        )
+    elif inducing is not None:
+        mcmc.run(
+            rng_key=rngkey,
+            X=X_train,
+            y=y_train,
+            inducing=inducing
+        )
+    else:
+        mcmc.run(rng_key=rngkey, X=X_train, y=y_train)
+
     mcmc.print_summary()
 
     return mcmc
@@ -66,7 +90,7 @@ def svi_inference(model, X_train, y_train, rngkey, steps):
 
     return svi_results, guide
 
-def predict_and_evaluate(model, X_test, y_test, rngkey, mcmc=None, svi_results=None, guide=None):
+def predict_and_evaluate(model, X_test, y_test, rngkey, mcmc=None, svi_results=None, guide=None, groups=None, inducing=None):
     
     if mcmc is not None:
         print('Inference Method: Markov Chain Monte Carlo with No U-Turn Sampler')
@@ -75,7 +99,14 @@ def predict_and_evaluate(model, X_test, y_test, rngkey, mcmc=None, svi_results=N
             model=model,
             posterior_samples=posterior_samples
         )
-        posterior_logits = predictor(rng_key=rngkey, X=X_test)
+
+        if groups is not None:
+            posterior_logits = predictor(rng_key=rngkey, X=X_test, groups=groups, num_groups=int((jnp.max(groups) + 1)))
+        elif inducing is not None:
+            posterior_logits = predictor(rng_key=rngkey, X=X_test, groups=groups, inducing=inducing)
+        else:
+            posterior_logits = predictor(rng_key=rngkey, X=X_test)
+
         mean_scores = jnp.mean(posterior_logits['obs'], axis=0)
     elif svi_results is not None and guide is not None:
         print('Inference Method: Stochastic Variational Inference with Adam Optimizer')
@@ -110,7 +141,7 @@ def predict_and_evaluate(model, X_test, y_test, rngkey, mcmc=None, svi_results=N
     print(f'Brier Score: {brier}')
 
 def generate_keys():
-    """Generates a pseudo-random key that is safe from run to run using OS entropy"""
+    """Generation of pseudo-random key using 32 bits of OS entropy"""
     entropy = secrets.randbits(32)
     master_prgkey = jax.random.PRNGKey(seed=entropy)
     return master_prgkey
@@ -118,7 +149,7 @@ def generate_keys():
 
 def ARD_RBFKernel(x1, x2, lengthscales, variance):
     """kernel function for determining the similarity between two points"""
-    squared_distance = jnp.sum(((x1[:, None, :] - x2[:, None, :]) / lengthscales) ** 2, axis=1)
+    squared_distance = jnp.sum(((x1[:, None, :] - x2[None, :, :]) / lengthscales) ** 2, axis=-1)
     similarity = variance * jnp.exp(-0.5 * squared_distance)
     return similarity
 
@@ -127,36 +158,74 @@ def get_initial_inducing_points(X, M, key):
     index = jax.random.choice(key=key, a=N, shape=(M,), replace=False)
     return X[index]
 
-def sample_nam_params(module, prefix, guide=None):
-    nodes, treedef = jax.tree_util.tree_flatten(module)
-    sampled_leaves = []
 
-    for i, node in enumerate(nodes):
-        if eqx.is_array(node):
-            name = f'{prefix}_{i}'
+def preprocess(path):
+    """Load csv data and clean/standardize the data
+        all binary data is encoded with binary integers
+        all categorical data is one hot encoded with the exception of months
+        month is encoded using sine cosine encoding
+    """
 
-            if guide is not None:
-                loc = numpyro.param(
-                    f"{name}_loc", 
-                    jnp.zeros_like(node)
-                )
-                scale = numpyro.param(
-                    f"{name}_scale", 
-                    jnp.ones_like(node) * 0.1,
-                    constraint=dist.constraints.positive
-                )
-                sampled_leaves.append(
-                    numpyro.sample(name, dist.Normal(loc, scale))
-                )
-            else:
-                sampled_leaves.append(
-                    numpyro.sample(
-                        name=name,
-                        fn=dist.Normal(0.0, 1.0).expand(node.shape)
-                    )
-                )
-        else:
-            sampled_leaves.append(node)
-    
-    reconstructed_tree = jax.tree_util.tree_unflatten(treedef, sampled_leaves)
-    return reconstructed_tree
+    df = pd.read_csv(path, sep=';')
+    scaler = StandardScaler()
+    interactor = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+    # Encode job categories and save decoder
+
+    categorical_columns = ['job', 'education', 'marital', 'poutcome']
+    continuous_columns = ['age', 'balance', 'day', 'campaign', 'previous']
+    continuous_indexes = [df.columns.get_loc(c) for c in continuous_columns]
+
+    ct = ColumnTransformer(
+        transformers=[('num', scaler, continuous_indexes)],
+        remainder='passthrough'
+    )
+
+    # Encode labels and defaulting
+    binary_mapper = {'no': 0, 'yes': 1}
+    df['y'] = df['y'].map(binary_mapper)
+    df['default'] = df['default'].map(binary_mapper)
+    df['housing'] = df['housing'].map(binary_mapper)
+    df['loan'] = df['loan'].map(binary_mapper)
+
+    job_cats = df['job'].unique()
+    job_encoder = {job: i for i, job in enumerate(job_cats)}
+    job_codes = df['job'].map(job_encoder).to_numpy(dtype=int)
+    df = pd.get_dummies(df, columns=categorical_columns, dtype=int)
+
+    # Sine-Cosine Encoding for Month
+    month_mapping = {
+    "jan": 0, "feb": 1, "mar": 2, "apr": 3, "may": 4, "jun": 5,
+    "jul": 6, "aug": 7, "sep": 8, "oct": 9, "nov": 10, "dec": 11
+    }
+    df['month_idx'] = df['month'].map(month_mapping)
+    df['month_sin'] = jnp.sin(2 * jnp.pi * df['month_idx'].to_numpy(dtype=int) / 12)
+    df['month_cos'] = jnp.cos(2 * jnp.pi * df['month_idx'].to_numpy(dtype=int) / 12)
+
+
+    df = df.drop(columns=['pdays', 'month', 'month_idx', 'contact', 'duration'])
+
+    labels = df['y']
+    features = df.drop(columns=['y'])
+
+    X_train_raw, X_test_raw, y_train, y_test, g_train, g_test = train_test_split(
+        features,
+        labels,
+        job_codes,
+        test_size=0.2,
+        shuffle=True,
+        stratify=labels,
+    )
+
+    X_train = ct.fit_transform(X_train_raw)
+    X_test = ct.transform(X_test_raw)
+
+    print(df.head(n=10))
+
+    X_train = jnp.array(X_train)
+    X_test = jnp.array(X_test)
+    y_train = jnp.array(y_train)
+    y_test = jnp.array(y_test)
+    g_train = jnp.array(g_train)
+    g_test = jnp.array(g_test)
+
+    return X_train, y_train, X_test, y_test, g_train, g_test

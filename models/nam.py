@@ -1,8 +1,11 @@
 import jax
 import jax.numpy as jnp
+import numpyro
+import numpyro.distributions as dist
 import equinox as eqx
 import equinox.nn as nn
 
+from model_utils import sample_nam_params
 
 class SubNet(eqx.Module):
 
@@ -80,3 +83,18 @@ class NAM(eqx.Module):
         return out.squeeze()
 
 
+def BayesianNeuralAdditiveModel(X_cont, X_month, X_bin, y, hidden_size=16):
+    N = X_cont.shape[0]
+
+    template_nam = NAM(
+        num_binary=X_bin[0],
+        num_continuous=X_cont[0],
+        neurons_per_layer=hidden_size,
+        key=jax.random.PRNGKey(0)
+    )
+
+    sampled_nam = sample_nam_params(template_nam, 'NAM', guide=False)
+
+    with numpyro.plate('data', N, subsample_size=2048) as idx:
+        logits = jax.vmap(lambda xc, xm, xb: sampled_nam(xc, xm, xb))(X_cont[idx], X_month[idx], X_bin[idx])
+        numpyro.sample('y', dist.Bernoulli(logits=logits), obs=y[idx])
